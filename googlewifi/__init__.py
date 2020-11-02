@@ -137,7 +137,10 @@ class GoogleWifi:
       
       response = await self.get_api(url, headers, payload)
 
-      return await self.structure_systems(response)
+      if response.get("groups"):
+        return await self.structure_systems(response)
+      else:
+        raise ConnectionError("Failed to retreive Google Wifi Data.")
 
   async def get_devices(self, system_id):
     """Retrieve the devices list for a given system."""
