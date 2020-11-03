@@ -140,7 +140,7 @@ class GoogleWifi:
       if response.get("groups"):
         return await self.structure_systems(response)
       else:
-        raise ConnectionError("Failed to retreive Google Wifi Data.")
+        raise GoogleWifiException("Failed to retreive Google Wifi Data.")
 
   async def get_devices(self, system_id):
     """Retrieve the devices list for a given system."""
@@ -181,7 +181,10 @@ class GoogleWifi:
 
       system_status = await self.get_status(this_system["id"])
 
-      systems[this_system["id"]]["status"] = system_status["wanConnectionStatus"]
+      try:
+        systems[this_system["id"]]["status"] = system_status["wanConnectionStatus"]
+      except KeyError as error:
+        raise GoogleWifiException(error)
 
       this_status = {}
       for this_ap in system_status["apStatuses"]:
@@ -191,17 +194,24 @@ class GoogleWifi:
 
       access_points = {}
       
-      for this_ap in this_system["accessPoints"]:
-        access_points[this_ap["id"]] = this_ap
-        access_points[this_ap["id"]]["status"] = system_status["status"][this_ap["id"]]["apState"]
-      
+      try:
+        for this_ap in this_system["accessPoints"]:
+          access_points[this_ap["id"]] = this_ap
+          access_points[this_ap["id"]]["status"] = system_status["status"][this_ap["id"]]["apState"]
+      except KeyError as error:
+        raise GoogleWifiException(error)
+
       systems[this_system["id"]]["access_points"] = access_points
 
       devices_list = await self.get_devices(this_system["id"])
       
       devices = {}
-      for this_device in devices_list["stations"]:
-        devices[this_device["id"]] = this_device
+      
+      try:
+        for this_device in devices_list["stations"]:
+          devices[this_device["id"]] = this_device
+      except KeyError as error:
+        raise GoogleWifiException(error)
 
       systems[this_system["id"]]["devices"] = devices
 
@@ -348,3 +358,7 @@ class GoogleWifi:
 
     else:
       return False
+
+class GoogleWifiException(Exception):
+  """Platform not ready exception."""
+  pass
