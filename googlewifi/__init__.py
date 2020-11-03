@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import json
 import datetime
+import dateutil.parser
 
 class GoogleWifi:
 
@@ -186,6 +187,10 @@ class GoogleWifi:
       except KeyError as error:
         raise GoogleWifiException(error)
 
+      blocking_policies = {}
+      for blocking_policy in this_system["groupSettings"]["familyHubSettings"]["stationPolicies"]:
+        blocking_policies[blocking_policy["stationId"]] = blocking_policy
+
       this_status = {}
       for this_ap in system_status["apStatuses"]:
         this_status[this_ap["apId"]] = this_ap
@@ -210,6 +215,15 @@ class GoogleWifi:
       try:
         for this_device in devices_list["stations"]:
           devices[this_device["id"]] = this_device
+          device_paused = False
+
+          if blocking_policies.get(this_device["id"]):
+            expire_date = dateutil.parser.parse(blocking_policies[this_device["id"]]["blockingPolicy"]["expiryTimestamp"])
+            
+            if expire_date > datetime.datetime.now(datetime.timezone.utc) or expire_date.timestamp() == 0:
+              device_paused = True
+
+          devices[this_device["id"]]["paused"] = device_paused
       except KeyError as error:
         raise GoogleWifiException(error)
 
