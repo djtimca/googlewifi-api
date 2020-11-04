@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 setuptools.setup(
     name="googlewifi", 
     packages=["googlewifi"],
-    version="0.0.5",
+    version="0.0.6",
     license='apache-2.0',
     author="Tim Empringham",
     author_email="tim.empringham@live.ca",
@@ -14,7 +14,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/djtimca/googlewifi-api",
-    download_url = 'https://github.com/djtimca/googlewifi-api/archive/v_0.0.5.tar.gz',
+    download_url = 'https://github.com/djtimca/googlewifi-api/archive/v_0.0.6.tar.gz',
     keywords = ['Google', 'Wifi'],
     classifiers=[
         'Development Status :: 3 - Alpha',

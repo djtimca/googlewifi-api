@@ -188,6 +188,7 @@ class GoogleWifi:
         raise GoogleWifiException(error)
 
       blocking_policies = {}
+      if this_system["groupSettings"].get("familyHubSettings").get("stationPolicies")
       for blocking_policy in this_system["groupSettings"]["familyHubSettings"]["stationPolicies"]:
         blocking_policies[blocking_policy["stationId"]] = blocking_policy
 
