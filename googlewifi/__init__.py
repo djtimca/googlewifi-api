@@ -3,7 +3,12 @@ import aiohttp
 import json
 import datetime
 import dateutil.parser
+import grpc
 
+from .v1_pb2 import GetHomeGraphRequest
+from .v1_pb2_grpc import StructuresServiceStub
+
+GH_HEADERS = {"Content-Type": "application/json"}
 class GoogleWifi:
 
   def __init__(self, refresh_token, session:aiohttp.ClientSession = None):
@@ -20,44 +25,73 @@ class GoogleWifi:
     self._systems = None
     self._access_points = {}
 
-  async def post_api(self, url:str, headers:str, payload:str):
+  async def post_api(
+    self, 
+    url:str, 
+    headers:str=None, 
+    payload:str=None, 
+    params:str=None,
+    json_payload=None,
+    ):
     """Post to the Google APIs."""
-    async with self._session.post(url, headers=headers, data=payload) as resp:
+    async with self._session.post(
+      url, 
+      headers=headers, 
+      data=payload,
+      params=params,
+      verify_ssl=False,
+      json=json_payload,
+    ) as resp:
       try:
         response = await resp.text()
       except aiohttp.ClientConnectorError as error:
         raise ConnectionError(error)
     
-    try:
-      response = json.loads(response)
-    except json.JSONDecodeError as error:
-      raise ValueError(error)
+    if response:
+      try:
+        response = json.loads(response)
+      except json.JSONDecodeError as error:
+        raise ValueError(error)
 
     return response
 
-  async def get_api(self, url:str, headers:str, payload:str):
+  async def get_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
     """Get call to Google APIs."""
-    async with self._session.get(url, headers=headers, data=payload) as resp:
+    async with self._session.get(
+      url, 
+      headers=headers, 
+      data=payload, 
+      params=params,
+      verify_ssl=False,
+    ) as resp:
       try:
         response = await resp.text()
       except aiohttp.ConnectionError as error:
         raise ConnectionError(error)
     
-    try:
-      response = json.loads(response)
-    except json.JSONDecodeError as error:
-      raise ValueError(error)
-    
+    if response:
+      try:
+        response = json.loads(response)
+      except json.JSONDecodeError as error:
+        raise ValueError(error)
+      
     return response
 
-  async def put_api(self, url:str, headers:str, payload:str):
+  async def put_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
     """Put call to Google APIs."""
-    async with self._session.put(url, headers=headers, data=payload) as resp:
+    async with self._session.put(
+      url, 
+      headers=headers, 
+      data=payload,
+      params=params,
+      verify_ssl=False,
+    ) as resp:
       try:
         response = await resp.text()
       except aiohttp.ConnectionError as error:
         raise ConnectionError(error)
-      
+
+    if response:  
       try:
         response = json.loads(response)
       except json.JSONDecodeError as error:
@@ -65,14 +99,21 @@ class GoogleWifi:
 
       return response
 
-  async def delete_api(self, url:str, headers:str, payload:str):
+  async def delete_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
     """Delete call to Google APIs."""
-    async with self._session.delete(url, headers=headers, data=payload) as resp:
+    async with self._session.delete(
+      url, 
+      headers=headers, 
+      data=payload,
+      params=params,
+      verify_ssl=False,
+    ) as resp:
       try:
         response = await resp.text()
       except aiohttp.ConnectionError as error:
         raise ConnectionError(error)
 
+    if response:
       try:
         response = json.loads(response)
       except json.JSONDecodeError as error:
@@ -176,7 +217,8 @@ class GoogleWifi:
   async def structure_systems(self, system_data):
     """Structure the data with ids in dict."""
     systems = {}
-
+    await refresh_tokens()
+    
     for this_system in system_data["groups"]:
       systems[this_system["id"]] = this_system
 
@@ -374,6 +416,80 @@ class GoogleWifi:
     else:
       return False
 
+  async def refresh_tokens(self):
+    """Refresh the Google Access tokens for local Google devices."""
+    if await self.connect():
+      creds = grpc.access_token_call_credentials(self._api_token)
+      ssl = grpc.ssl_channel_credentials()
+      composite = grpc.composite_channel_credentials(ssl, creds)
+      channel = grpc.secure_channel("googlehomefoyer-pa.googleapis.com:443", composite)
+      service = StructuresServiceStub(channel)
+      resp = service.GetHomeGraph(GetHomeGraphRequest())
+      data = resp.home.devices
+
+      tokens = {}
+
+      for device in data:
+          # this is the 'cloud device id'
+          if device.local_auth_token != "":
+            tokens[
+                device.device_info.project_info.string2
+            ] = device.local_auth_token
+
+      return tokens
+
+  async def update_info(self, host):
+    """Update data from Google Home."""
+
+    if await self.connect():
+      url = f"https://{host}:8443/setup/eureka_info"
+      params = {
+        "params":"version,audio,name,build_info,detail,device_info,net,wifi,setup,settings,opt_in,opencast,multizone,proxy,night_mode_params,user_eq,room_equalizer",
+        "options":"detail"
+      }
+
+      response = await self.get_api(url=url,params=params)
+
+      if response:
+        return response
+      else:
+        raise GoogleHomeUpdateFailed()
+
+  async def get_bluetooth_status(self, host, token):
+    """Retrieve the current bluetooth status."""
+    if await self.connect():
+      url = f"https://{host}:8443/setup/bluetooth/status"
+      headers = {"cast-local-authorization-token": token}
+
+      response = await self.get_api(url=url,headers=headers)
+
+      return response
+
+  async def get_bluetooth_devices(self, host, token):
+    """Retrieve the current bluetooth clients from a Google Home."""
+
+    if await self.connect():
+      url = f"https://{host}:8443/setup/bluetooth/scan"
+      data = {"enable": True, "clear_results": False, "timeout": 5}
+      headers = GH_HEADERS
+      headers["Host"] = host
+      headers["cast-local-authorization-token"] = token
+
+      await self.post_api(url=url,headers=headers,json_payload=data)
+      await asyncio.sleep(5)
+
+      url = f"https://{host}:8443/setup/bluetooth/scan_results"
+      
+      response = await self.get_api(url=url,headers=headers)
+
+      if response:
+        return response
+      else:
+        raise GoogleHomeUpdateFailed()
+
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
   pass
+
+class GoogleHomeUpdateFailed(Exception):
+  """Google Home Update failed, token refresh required."""
