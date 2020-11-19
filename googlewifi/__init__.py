@@ -489,10 +489,7 @@ class GoogleWifi:
       
       response = await self.get_api(url=url,headers=headers)
 
-      if response:
-        return response
-      else:
-        raise GoogleHomeUpdateFailed()
+      return response
 
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
