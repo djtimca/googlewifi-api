@@ -41,11 +41,13 @@ class GoogleWifi:
       params=params,
       verify_ssl=False,
       json=json_payload,
+      timeout=15,
     ) as resp:
       try:
         response = await resp.text()
       except aiohttp.ClientConnectorError as error:
         raise ConnectionError(error)
+      
     
     if response:
       try:
@@ -57,17 +59,21 @@ class GoogleWifi:
 
   async def get_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
     """Get call to Google APIs."""
-    async with self._session.get(
-      url, 
-      headers=headers, 
-      data=payload, 
-      params=params,
-      verify_ssl=False,
-    ) as resp:
-      try:
-        response = await resp.text()
-      except aiohttp.ConnectionError as error:
-        raise ConnectionError(error)
+    try:
+      async with self._session.get(
+        url, 
+        headers=headers, 
+        data=payload, 
+        params=params,
+        verify_ssl=False,
+        timeout=15,
+      ) as resp:
+        try:
+          response = await resp.text()
+        except aiohttp.ConnectionError as error:
+          raise ConnectionError(error)
+    except asyncio.TimeoutError as error:
+      raise GoogleHomeIgnoreDevice(error)
     
     if response:
       try:
@@ -85,6 +91,7 @@ class GoogleWifi:
       data=payload,
       params=params,
       verify_ssl=False,
+      timeout=15,
     ) as resp:
       try:
         response = await resp.text()
@@ -107,6 +114,7 @@ class GoogleWifi:
       data=payload,
       params=params,
       verify_ssl=False,
+      timeout=15,
     ) as resp:
       try:
         response = await resp.text()
@@ -492,3 +500,6 @@ class GoogleWifiException(Exception):
 
 class GoogleHomeUpdateFailed(Exception):
   """Google Home Update failed, token refresh required."""
+
+class GoogleHomeIgnoreDevice(Exception):
+  """Google Home can't get data, ignore it."""
