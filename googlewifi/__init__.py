@@ -477,7 +477,7 @@ class GoogleWifi:
 
     if await self.connect():
       url = f"https://{host}:8443/setup/bluetooth/scan"
-      data = {"enable": True, "clear_results": False, "timeout": 5}
+      data = {"enable": True, "clear_results": True, "timeout": 5}
       headers = GH_HEADERS
       headers["Host"] = host
       headers["cast-local-authorization-token"] = token
