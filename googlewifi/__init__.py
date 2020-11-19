@@ -217,7 +217,6 @@ class GoogleWifi:
   async def structure_systems(self, system_data):
     """Structure the data with ids in dict."""
     systems = {}
-    await refresh_tokens()
     
     for this_system in system_data["groups"]:
       systems[this_system["id"]] = this_system
