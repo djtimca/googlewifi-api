@@ -55,4 +55,8 @@ Will return the current bluetooth status for the Google Home/Mini etc device.
 
 Will return a list of all bluetooth devices which are within range of that Google Home/Mini etc including the MAC address, device type, name, and RSSI (signal strength).
 
+### run_speed_test(system_id:str)
+
+Will run a WAN speed test on the system and return the results (upload/download speed).
+
 Note: This library was built specifically for integration to Home Assistant.
