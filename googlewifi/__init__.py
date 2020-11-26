@@ -491,6 +491,74 @@ class GoogleWifi:
 
       return response
 
+  async def create_wan_speedtest(self, system_id:str):
+    """Start a speed test operation on a system."""
+    if await self.connect():
+      url = f"https://googlehomefoyer-pa.googleapis.com/v2/groups/{system_id}/wanSpeedTest"
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      payload = {}
+      params = (
+        ('prettyPrint', 'false'),
+      )
+
+      response = await self.post_api(url=url,headers=headers,payload=payload,params=params)
+      operation_id = response["operation"]["operationId"]
+
+      return operation_id
+
+  async def check_operation(self, operation_id: str):
+    """Check the status of a speed test operation."""
+    if await self.connect():
+      url = f"https://googlehomefoyer-pa.googleapis.com/v2/operations/{operation_id}"
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      payload = {}
+      params = (
+        ('prettyPrint', 'false'),
+      )
+
+      return await self.get_api(url=url,headers=headers,payload=payload,params=params)
+
+  async def speed_test_results(self, system_id:str):
+    """Retrieve the speed test results."""
+    if await self.connect():
+      url = f"https://googlehomefoyer-pa.googleapis.com/v2/groups/{system_id}/speedTestResults"
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      payload = {}
+      params = (
+        ('prettyPrint', 'false'),
+        ('maxResultCount', 1)
+      )
+
+      response = await self.get_api(url=url,headers=headers,payload=payload,params=params)
+
+      return response["speedTestResults"]
+
+  async def run_speed_test(self, system_id:str):
+    """Run a speed test and return the results."""
+    if await self.connect():
+      operation_id = await self.create_wan_speedtest(system_id=system_id)
+
+      status = await self.check_operation(operation_id)
+      status = status["operationState"]
+
+      while status != "DONE":
+        status = await self.check_operation(operation_id)
+        status = status["operationState"]
+        await asyncio.sleep(5)
+
+      results = await self.speed_test_results(system_id=system_id)
+      return results[0]
+      
+
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
   pass
