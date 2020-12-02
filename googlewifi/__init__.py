@@ -230,9 +230,11 @@ class GoogleWifi:
       systems[this_system["id"]] = this_system
 
       system_status = await self.get_status(this_system["id"])
+      system_metrics = await self.get_realtime_metrics(this_system["id"])
 
       try:
         systems[this_system["id"]]["status"] = system_status["wanConnectionStatus"]
+        systems[this_system["id"]]["groupTraffic"] = system_metrics.get("groupTraffic",None)
       except KeyError as error:
         raise GoogleWifiException(error)
 
@@ -261,10 +263,12 @@ class GoogleWifi:
       devices_list = await self.get_devices(this_system["id"])
       
       devices = {}
+      station_ids = []
       
       try:
         for this_device in devices_list["stations"]:
           devices[this_device["id"]] = this_device
+          station_ids.append(this_device["id"])
           device_paused = False
 
           if blocking_policies.get(this_device["id"]):
@@ -276,6 +280,15 @@ class GoogleWifi:
           devices[this_device["id"]]["paused"] = device_paused
       except KeyError as error:
         raise GoogleWifiException(error)
+
+      sensitive_info = await self.get_sensitive_info(system_id=this_system["id"], station_ids=station_ids)                                        
+      for this_station in sensitive_info:
+        if this_station["stationId"] in devices:
+          devices[this_station["stationId"]]["macAddress"] = this_station["macAddress"]
+
+      for this_station in system_metrics["stationMetrics"]:
+        if this_station["station"]["id"] in devices:
+          devices[this_station["station"]["id"]]["traffic"] = this_station["traffic"]
 
       systems[this_system["id"]]["devices"] = devices
 
@@ -558,6 +571,73 @@ class GoogleWifi:
       results = await self.speed_test_results(system_id=system_id)
       return results[0]
       
+  async def start_retrieve_sensitive_info(self, system_id:str, station_ids:list):
+    """Start the request to return the device sensitive information."""
+    if await self.connect():
+      url = f"https://googlehomefoyer-pa.googleapis.com/v2/groups/{system_id}/stations/operations/sensitiveInfo"
+
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      json_payload = {"stationIds":station_ids}
+      params = (
+        ('prettyPrint', 'false'),
+      )
+
+      response = await self.post_api(url=url,headers=headers,json_payload=json_payload,params=params)
+      operation_id = response["operation"]["operationId"]
+
+      return operation_id
+
+  async def sensitive_info_results(self, operation_id:str):
+    """Return the results of the sensitive info request."""
+    if await self.connect():
+      url = f"https://googlehomefoyer-pa.googleapis.com/v2/operations/{operation_id}/sensitiveInfo"
+      params = (
+        ('prettyPrint', 'false'),
+      )
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      payload = {}
+
+      return await self.get_api(url=url, headers=headers, payload=payload, params=params)
+
+  async def get_sensitive_info(self, system_id:str, station_ids:list):
+    """Return a full set of sensitive info on the system."""
+    if await self.connect():
+      operation_id = await self.start_retrieve_sensitive_info(
+        system_id=system_id,station_ids=station_ids
+      )
+
+      status = await self.check_operation(operation_id)
+      status = status["operationState"]
+
+      while status != "DONE":
+        status = await self.check_operation(operation_id)
+        status = status["operationState"]
+        await asyncio.sleep(5)
+
+      results = await self.sensitive_info_results(operation_id=operation_id)
+      return results["stationSensitiveInfos"]
+
+  async def get_realtime_metrics(self, system_id:str):
+    """Return real-time metrics from the system."""
+    if await self.connect():
+      url =  f"https://googlehomefoyer-pa.googleapis.com/v2/groups/{system_id}/realtimeMetrics"
+      params = (
+        ('prettyPrint', 'false'),
+      )
+      headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Authorization": f"Bearer {self._api_token}"
+      }
+      payload = {}
+
+      return await self.get_api(url=url, headers=headers, payload=payload, params=params)
+    
 
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
