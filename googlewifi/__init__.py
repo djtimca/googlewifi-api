@@ -621,7 +621,7 @@ class GoogleWifi:
         await asyncio.sleep(5)
 
       results = await self.sensitive_info_results(operation_id=operation_id)
-      return results["stationSensitiveInfos"]
+      return results.get("stationSensitiveInfos",[])
 
   async def get_realtime_metrics(self, system_id:str):
     """Return real-time metrics from the system."""
