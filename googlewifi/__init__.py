@@ -292,7 +292,7 @@ class GoogleWifi:
 
       systems[this_system["id"]]["devices"] = devices
 
-      return systems
+    return systems
 
   async def pause_device(self, system_id:str, device_id:str, pause_state:bool):
     """Pause or unpause a specific device"""
