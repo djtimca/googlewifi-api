@@ -286,7 +286,7 @@ class GoogleWifi:
         if this_station["stationId"] in devices:
           devices[this_station["stationId"]]["macAddress"] = this_station["macAddress"]
 
-      for this_station in system_metrics["stationMetrics"]:
+      for this_station in system_metrics.get("stationMetrics"):
         if this_station["station"]["id"] in devices:
           devices[this_station["station"]["id"]]["traffic"] = this_station["traffic"]
 
