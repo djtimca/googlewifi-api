@@ -284,11 +284,11 @@ class GoogleWifi:
       sensitive_info = await self.get_sensitive_info(system_id=this_system["id"], station_ids=station_ids)                                        
       for this_station in sensitive_info:
         if this_station["stationId"] in devices:
-          devices[this_station["stationId"]]["macAddress"] = this_station["macAddress"]
+          devices[this_station["stationId"]]["macAddress"] = this_station.get("macAddress",{})
 
       for this_station in system_metrics.get("stationMetrics"):
         if this_station["station"]["id"] in devices:
-          devices[this_station["station"]["id"]]["traffic"] = this_station["traffic"]
+          devices[this_station["station"]["id"]]["traffic"] = this_station.get("traffic",{})
 
       systems[this_system["id"]]["devices"] = devices
 
