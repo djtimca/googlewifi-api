@@ -41,7 +41,7 @@ class GoogleWifi:
       params=params,
       verify_ssl=False,
       json=json_payload,
-      timeout=15,
+      timeout=30,
     ) as resp:
       try:
         response = await resp.text()
@@ -66,7 +66,7 @@ class GoogleWifi:
         data=payload, 
         params=params,
         verify_ssl=False,
-        timeout=15,
+        timeout=30,
       ) as resp:
         try:
           response = await resp.text()
@@ -91,7 +91,7 @@ class GoogleWifi:
       data=payload,
       params=params,
       verify_ssl=False,
-      timeout=15,
+      timeout=30,
     ) as resp:
       try:
         response = await resp.text()
@@ -114,7 +114,7 @@ class GoogleWifi:
       data=payload,
       params=params,
       verify_ssl=False,
-      timeout=15,
+      timeout=30,
     ) as resp:
       try:
         response = await resp.text()
