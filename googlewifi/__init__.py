@@ -586,7 +586,7 @@ class GoogleWifi:
       )
 
       response = await self.post_api(url=url,headers=headers,json_payload=json_payload,params=params)
-      operation_id = response["operation"]["operationId"]
+      operation_id = response.get("operation",[]).get("operationId")
 
       return operation_id
 
