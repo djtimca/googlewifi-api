@@ -27,4 +27,5 @@ setuptools.setup(
         'Programming Language :: Python :: 3.6',
     ],
     python_requires='>=3.8',
+    install_requires=['ghome-foyer-api>=1.0.0,<2.0.0'],
 )
