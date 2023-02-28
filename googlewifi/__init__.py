@@ -5,8 +5,8 @@ import datetime
 import dateutil.parser
 import grpc
 
-from .v1_pb2 import GetHomeGraphRequest
-from .v1_pb2_grpc import StructuresServiceStub
+from ghome_foyer_api.api_pb2 import GetHomeGraphRequest
+from ghome_foyer_api.api_pb2_grpc import StructuresServiceStub
 
 GH_HEADERS = {"Content-Type": "application/json"}
 class GoogleWifi:
