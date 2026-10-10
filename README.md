@@ -1,15 +1,48 @@
 # googlewifi-api
 PyPi Integration for Google WiFi Services for Home Assistant integration. Also provides bluetooth scanning from Google/Nest Home, Mini etc smart speakers to return information about bluetooth devices in the area.
 
-## Required - Refresh Token
+## Required - Google account credentials
 
-In order to use this API you will need to get a Refresh Token by using the tools or Chrome plugin at https://www.angelod.com/onhubauthtool
+This API authenticates through Google Play Services OAuth (`gpsoauth`). You need your Google account email, a master token (`aas_et/...` or `oauth2rt_1/...`), and an `android_id`.
 
-## Available Methods
+To obtain a master token:
 
-When you initiate the GoogleWifi class you will need to pass in your refresh token that you receive using the tools at www.angelod.com.
+1. Open `https://accounts.google.com/EmbeddedSetup` in a browser.
+2. Sign in with the Google account that owns/manages the Wifi network.
+3. Open browser developer tools and copy the **entire** value of the `oauth_token` cookie (it starts with `oauth2_4/`).
+4. Exchange it for a master token:
+
+```python
+import secrets, asyncio
+from googlewifi import GoogleWifi
+
+android_id = secrets.token_hex(8)
+master_token = asyncio.run(
+    GoogleWifi.exchange_oauth_token("you@gmail.com", "oauth2_4/...", android_id)
+)
+```
+
+The short-lived `oauth_token` is only used once. The resulting master token is reusable and sensitive — treat it like a password.
+
+If you already have a master token, skip the exchange and pass it directly.
+
+## Usage
+
+```python
+api = GoogleWifi(
+    email="you@gmail.com",
+    master_token="aas_et/...",
+    android_id="0123456789abcdef",
+)
+await api.connect()
+systems = await api.get_systems()
+```
 
 Session can be sent as an optional aiohttp session if you are managing your session within an application.
+
+`GoogleWifiAuthError` is raised when the stored master token is rejected by Google and a new `oauth_token` exchange is required.
+
+## Available Methods
 
 ### get_systems()
 

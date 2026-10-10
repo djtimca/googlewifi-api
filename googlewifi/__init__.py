@@ -1,54 +1,100 @@
 import asyncio
+import time
 import aiohttp
 import json
 import datetime
 import dateutil.parser
 import grpc
+import gpsoauth
 
 from ghome_foyer_api.api_pb2 import GetHomeGraphRequest
 from ghome_foyer_api.api_pb2_grpc import StructuresServiceStub
 
 GH_HEADERS = {"Content-Type": "application/json"}
+
+OAUTH_SERVICE = (
+  "oauth2:https://www.googleapis.com/auth/accesspoints "
+  "https://www.googleapis.com/auth/clouddevices"
+)
+GOOGLE_HOME_APP = "com.google.android.apps.chromecast.app"
+GOOGLE_HOME_CLIENT_SIG = "24bb24c05e47e0aefa68a58a766179d9b613a600"
+TOKEN_REFRESH_MARGIN = 300
+GPSOAUTH_TIMEOUT = 30
+
+
 class GoogleWifi:
 
-  def __init__(self, refresh_token, session:aiohttp.ClientSession = None):
-    """Get the API Bearer Token."""
+  def __init__(self, email:str, master_token:str, android_id:str, session:aiohttp.ClientSession = None):
+    """Initialize the Google Wifi API with a Google account credential set.
+
+    email: Google account email address.
+    master_token: aas_et/... or oauth2rt_1/... master token obtained via exchange_oauth_token().
+    android_id: android id used when the master token was minted.
+    """
 
     if session:
       self._session = session
     else:
       self._session = aiohttp.ClientSession()
 
-    self._refresh_token = refresh_token
-    self._access_token = None
+    self._email = email
+    self._master_token = master_token
+    self._android_id = android_id
     self._api_token = None
+    self._api_token_expiry = 0
     self._systems = None
     self._access_points = {}
 
+  @staticmethod
+  async def exchange_oauth_token(email:str, oauth_token:str, android_id:str):
+    """Exchange an EmbeddedSetup oauth_token (oauth2_4/...) for a master token."""
+    def _exchange():
+      return gpsoauth.exchange_token(email, oauth_token, android_id)
+
+    try:
+      response = await asyncio.wait_for(asyncio.to_thread(_exchange), GPSOAUTH_TIMEOUT)
+    except asyncio.TimeoutError as error:
+      raise ConnectionError(f"Timed out contacting Google authentication: {error}") from error
+    except Exception as error:
+      raise GoogleWifiAuthError(f"Could not exchange oauth_token: {error}") from error
+
+    if not isinstance(response, dict):
+      raise GoogleWifiAuthError("Malformed response from Google authentication")
+
+    master_token = response.get("Token")
+    if not master_token:
+      error = response.get("Error") or response.get("error") or "unknown error"
+      raise GoogleWifiAuthError(f"Google did not return a master token: {error}")
+
+    return master_token
+
   async def post_api(
-    self, 
-    url:str, 
-    headers:str=None, 
-    payload:str=None, 
+    self,
+    url:str,
+    headers:str=None,
+    payload:str=None,
     params:str=None,
     json_payload=None,
+    _retry:bool=True,
     ):
     """Post to the Google APIs."""
     async with self._session.post(
-      url, 
-      headers=headers, 
+      url,
+      headers=headers,
       data=payload,
       params=params,
-      verify_ssl=False,
       json=json_payload,
       timeout=30,
     ) as resp:
+      if resp.status == 401 and _retry:
+        await self._refresh_token_once(headers)
+        return await self.post_api(url, headers, payload, params, json_payload, False)
+      self._check_status(resp.status)
       try:
         response = await resp.text()
       except aiohttp.ClientConnectorError as error:
         raise ConnectionError(error)
-      
-    
+
     if response:
       try:
         response = json.loads(response)
@@ -57,68 +103,51 @@ class GoogleWifi:
 
     return response
 
-  async def get_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
+  async def get_api(self, url:str, headers:str=None, payload:str=None, params:str=None, _retry:bool=True):
     """Get call to Google APIs."""
     try:
       async with self._session.get(
-        url, 
-        headers=headers, 
-        data=payload, 
+        url,
+        headers=headers,
+        data=payload,
         params=params,
-        verify_ssl=False,
         timeout=30,
       ) as resp:
+        if resp.status == 401 and _retry:
+          await self._refresh_token_once(headers)
+          return await self.get_api(url, headers, payload, params, False)
+        self._check_status(resp.status)
         try:
           response = await resp.text()
-        except aiohttp.ConnectionError as error:
+        except aiohttp.ClientError as error:
           raise ConnectionError(error)
     except asyncio.TimeoutError as error:
       raise GoogleHomeIgnoreDevice(error)
-    
+
     if response:
       try:
         response = json.loads(response)
       except json.JSONDecodeError as error:
         raise ValueError(error)
-      
+
     return response
 
-  async def put_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
+  async def put_api(self, url:str, headers:str=None, payload:str=None, params:str=None, _retry:bool=True):
     """Put call to Google APIs."""
     async with self._session.put(
-      url, 
-      headers=headers, 
+      url,
+      headers=headers,
       data=payload,
       params=params,
-      verify_ssl=False,
       timeout=30,
     ) as resp:
+      if resp.status == 401 and _retry:
+        await self._refresh_token_once(headers)
+        return await self.put_api(url, headers, payload, params, False)
+      self._check_status(resp.status)
       try:
         response = await resp.text()
-      except aiohttp.ConnectionError as error:
-        raise ConnectionError(error)
-
-    if response:  
-      try:
-        response = json.loads(response)
-      except json.JSONDecodeError as error:
-        raise ValueError(error)
-
-      return response
-
-  async def delete_api(self, url:str, headers:str=None, payload:str=None, params:str=None):
-    """Delete call to Google APIs."""
-    async with self._session.delete(
-      url, 
-      headers=headers, 
-      data=payload,
-      params=params,
-      verify_ssl=False,
-      timeout=30,
-    ) as resp:
-      try:
-        response = await resp.text()
-      except aiohttp.ConnectionError as error:
+      except aiohttp.ClientError as error:
         raise ConnectionError(error)
 
     if response:
@@ -129,51 +158,100 @@ class GoogleWifi:
 
       return response
 
-  async def get_access_token(self):
-    """Get Access Token"""
-    url = "https://www.googleapis.com/oauth2/v4/token"
-    payload = f"client_id=936475272427.apps.googleusercontent.com&grant_type=refresh_token&refresh_token={self._refresh_token}"
-    headers = {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    response = await self.post_api(url, headers, payload)
-    
-    self._access_token = response.get("access_token", None)
+  async def delete_api(self, url:str, headers:str=None, payload:str=None, params:str=None, _retry:bool=True):
+    """Delete call to Google APIs."""
+    async with self._session.delete(
+      url,
+      headers=headers,
+      data=payload,
+      params=params,
+      timeout=30,
+    ) as resp:
+      if resp.status == 401 and _retry:
+        await self._refresh_token_once(headers)
+        return await self.delete_api(url, headers, payload, params, False)
+      self._check_status(resp.status)
+      try:
+        response = await resp.text()
+      except aiohttp.ClientError as error:
+        raise ConnectionError(error)
 
-  async def get_api_token(self):
-    """Get the API Token."""
-    
-    if not self._access_token:
-      await self.get_access_token()
-      
-      if not self._access_token:
-        raise ConnectionError("Authorization Error")
+    if response:
+      try:
+        response = json.loads(response)
+      except json.JSONDecodeError as error:
+        raise ValueError(error)
 
-    oath_url = "https://oauthaccountmanager.googleapis.com/v1/issuetoken"
-    payload = "app_id=com.google.OnHub&client_id=586698244315-vc96jg3mn4nap78iir799fc2ll3rk18s.apps.googleusercontent.com&hl=en-US&lib_ver=3.3&response_type=token&scope=https%3A//www.googleapis.com/auth/accesspoints%20https%3A//www.googleapis.com/auth/clouddevices"
-    headers = {
-      'Authorization': f"Bearer {self._access_token}",
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-    
-    response = await self.post_api(oath_url, headers, payload)
-    
-    self._api_token = response.get("token", None)
-    if self._api_token:
+      return response
+
+  @staticmethod
+  def _check_status(status:int):
+    """Raise on error responses, re-mintable auth errors included."""
+    if status == 401 or status == 403:
+      raise GoogleWifiAuthError(f"Foyer authorization failed (HTTP {status})")
+    if status >= 400:
+      raise GoogleWifiException(f"Foyer API returned HTTP {status}")
+
+  async def get_api_token(self, force_refresh:bool=False):
+    """Mint or refresh the scoped API token via Google Play Services OAuth."""
+
+    if (
+      not force_refresh
+      and self._api_token
+      and self._api_token_expiry - TOKEN_REFRESH_MARGIN > time.time()
+    ):
       return True
+
+    def _oauth():
+      return gpsoauth.perform_oauth(
+        self._email,
+        self._master_token,
+        self._android_id,
+        service=OAUTH_SERVICE,
+        app=GOOGLE_HOME_APP,
+        client_sig=GOOGLE_HOME_CLIENT_SIG,
+      )
+
+    try:
+      response = await asyncio.wait_for(asyncio.to_thread(_oauth), GPSOAUTH_TIMEOUT)
+    except asyncio.TimeoutError as error:
+      raise ConnectionError(f"Timed out contacting Google authentication: {error}") from error
+    except Exception as error:
+      raise ConnectionError(f"Google authentication token request failed: {error}") from error
+
+    if not isinstance(response, dict):
+      raise ConnectionError("Malformed response from Google authentication")
+
+    error = response.get("Error") or response.get("error")
+    if isinstance(error, str) and error.casefold() == "badauthentication":
+      raise GoogleWifiAuthError("Google rejected the stored master token")
+
+    token = response.get("Auth")
+    if not token:
+      raise GoogleWifiAuthError(
+        f"Google did not return an access token: {error or 'unknown error'}"
+      )
+
+    try:
+      lifetime = int(response.get("ExpiresInDurationSec", 3600))
+    except (TypeError, ValueError):
+      lifetime = 3600
+
+    self._api_token = token
+    self._api_token_expiry = time.time() + max(lifetime, 0)
+
+    return True
+
+  async def _refresh_token_once(self, headers):
+    """Force a token re-mint and update the Authorization header in place."""
+    await self.get_api_token(force_refresh=True)
+    if isinstance(headers, dict):
+      headers["Authorization"] = f"Bearer {self._api_token}"
 
   async def connect(self):
     """Authenticate to the Google Wifi services."""
-    success = True
-
-    if not self._api_token:
-      success = await self.get_api_token()
-      
-    if success:
-      return True
-    else:
-      return False
+    await self.get_api_token()
+    return bool(self._api_token)
 
   async def get_systems(self):
     """Get the systems on this account."""
@@ -239,8 +317,9 @@ class GoogleWifi:
         raise GoogleWifiException(error)
 
       blocking_policies = {}
-      if this_system["groupSettings"].get("familyHubSettings").get("stationPolicies"):
-        for blocking_policy in this_system["groupSettings"]["familyHubSettings"]["stationPolicies"]:
+      family_hub_settings = this_system["groupSettings"].get("familyHubSettings") or {}
+      if family_hub_settings.get("stationPolicies"):
+        for blocking_policy in family_hub_settings["stationPolicies"]:
           blocking_policies[blocking_policy["stationId"]] = blocking_policy
 
       this_status = {}
@@ -642,6 +721,10 @@ class GoogleWifi:
 
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
+  pass
+
+class GoogleWifiAuthError(Exception):
+  """Stored Google credentials were rejected; re-authentication required."""
   pass
 
 class GoogleHomeUpdateFailed(Exception):
