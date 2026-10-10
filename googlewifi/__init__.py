@@ -6,16 +6,14 @@ import datetime
 import dateutil.parser
 import grpc
 import gpsoauth
+import requests
 
 from ghome_foyer_api.api_pb2 import GetHomeGraphRequest
 from ghome_foyer_api.api_pb2_grpc import StructuresServiceStub
 
 GH_HEADERS = {"Content-Type": "application/json"}
 
-OAUTH_SERVICE = (
-  "oauth2:https://www.googleapis.com/auth/accesspoints "
-  "https://www.googleapis.com/auth/clouddevices"
-)
+OAUTH_SERVICE = "oauth2:https://www.googleapis.com/auth/accesspoints"
 GOOGLE_HOME_APP = "com.google.android.apps.chromecast.app"
 GOOGLE_HOME_CLIENT_SIG = "24bb24c05e47e0aefa68a58a766179d9b613a600"
 TOKEN_REFRESH_MARGIN = 300
@@ -24,12 +22,16 @@ GPSOAUTH_TIMEOUT = 30
 
 class GoogleWifi:
 
-  def __init__(self, email:str, master_token:str, android_id:str, session:aiohttp.ClientSession = None):
+  def __init__(self, email:str, master_token:str, android_id:str, session:aiohttp.ClientSession = None, oauth_service:str = OAUTH_SERVICE):
     """Initialize the Google Wifi API with a Google account credential set.
 
     email: Google account email address.
     master_token: aas_et/... or oauth2rt_1/... master token obtained via exchange_oauth_token().
     android_id: android id used when the master token was minted.
+    oauth_service: gpsoauth service string; default requests only the
+      accesspoints scope required for the Wifi API. Pass a scope list such as
+      "oauth2:https://www.googleapis.com/auth/accesspoints https://www.googleapis.com/auth/clouddevices"
+      if Google Home bluetooth helpers (refresh_tokens) are needed.
     """
 
     if session:
@@ -40,6 +42,7 @@ class GoogleWifi:
     self._email = email
     self._master_token = master_token
     self._android_id = android_id
+    self._oauth_service = oauth_service
     self._api_token = None
     self._api_token_expiry = 0
     self._systems = None
@@ -55,6 +58,8 @@ class GoogleWifi:
       response = await asyncio.wait_for(asyncio.to_thread(_exchange), GPSOAUTH_TIMEOUT)
     except asyncio.TimeoutError as error:
       raise ConnectionError(f"Timed out contacting Google authentication: {error}") from error
+    except requests.exceptions.RequestException as error:
+      raise ConnectionError(f"Could not reach Google authentication: {error}") from error
     except Exception as error:
       raise GoogleWifiAuthError(f"Could not exchange oauth_token: {error}") from error
 
@@ -207,7 +212,7 @@ class GoogleWifi:
         self._email,
         self._master_token,
         self._android_id,
-        service=OAUTH_SERVICE,
+        service=self._oauth_service,
         app=GOOGLE_HOME_APP,
         client_sig=GOOGLE_HOME_CLIENT_SIG,
       )
