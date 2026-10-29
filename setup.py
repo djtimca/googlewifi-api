@@ -27,5 +27,5 @@ setuptools.setup(
         'Programming Language :: Python :: 3.6',
     ],
     python_requires='>=3.9',
-    install_requires=['ghome-foyer-api>=1.0.0,<2.0.0','gpsoauth==2.0.0'],
+    install_requires=['ghome-foyer-api>=1.0.0,<4.0.0','gpsoauth==2.0.0'],
 )

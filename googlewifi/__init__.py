@@ -538,7 +538,7 @@ class GoogleWifi:
           # this is the 'cloud device id'
           if device.local_auth_token != "":
             tokens[
-                device.device_info.project_info.string2
+                device.device_info.agent_info.unique_id
             ] = device.local_auth_token
 
       return tokens
