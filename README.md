@@ -40,7 +40,13 @@ systems = await api.get_systems()
 
 Session can be sent as an optional aiohttp session if you are managing your session within an application.
 
-`GoogleWifiAuthError` is raised when the stored master token is rejected by Google and a new `oauth_token` exchange is required.
+`GoogleWifiAuthError` is raised when the stored master token is rejected by Google and a new `oauth_token` exchange is required, or when Foyer returns HTTP 401.
+
+`GoogleWifiForbiddenError` is raised when Foyer returns HTTP 403 — typically quota, rate limiting, or a transient backend rejection. The stored credentials are still valid; retry later rather than re-authenticating.
+
+`GoogleWifiRateLimitError` is raised when Foyer returns HTTP 429. Back off and retry later.
+
+All three carry the offending HTTP status code in their `.status` attribute (`None` for non-HTTP failures like token minting errors). `GoogleWifiForbiddenError` and `GoogleWifiRateLimitError` subclass `GoogleWifiException`.
 
 ## Available Methods
 

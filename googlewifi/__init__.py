@@ -192,10 +192,14 @@ class GoogleWifi:
   @staticmethod
   def _check_status(status:int):
     """Raise on error responses, re-mintable auth errors included."""
-    if status == 401 or status == 403:
-      raise GoogleWifiAuthError(f"Foyer authorization failed (HTTP {status})")
+    if status == 401:
+      raise GoogleWifiAuthError(f"Foyer authorization failed (HTTP {status})", status=status)
+    if status == 403:
+      raise GoogleWifiForbiddenError(f"Foyer request forbidden (HTTP {status})", status=status)
+    if status == 429:
+      raise GoogleWifiRateLimitError(f"Foyer rate limited the request (HTTP {status})", status=status)
     if status >= 400:
-      raise GoogleWifiException(f"Foyer API returned HTTP {status}")
+      raise GoogleWifiException(f"Foyer API returned HTTP {status}", status=status)
 
   async def get_api_token(self, force_refresh:bool=False):
     """Mint or refresh the scoped API token via Google Play Services OAuth."""
@@ -726,10 +730,23 @@ class GoogleWifi:
 
 class GoogleWifiException(Exception):
   """Platform not ready exception."""
-  pass
+  def __init__(self, message="", status=None):
+    super().__init__(message)
+    self.status = status
 
 class GoogleWifiAuthError(Exception):
   """Stored Google credentials were rejected; re-authentication required."""
+  def __init__(self, message="", status=None):
+    super().__init__(message)
+    self.status = status
+
+class GoogleWifiForbiddenError(GoogleWifiException):
+  """Foyer rejected the request with HTTP 403 (quota, rate limiting, or a
+  transient backend rejection). The stored credentials are still valid."""
+  pass
+
+class GoogleWifiRateLimitError(GoogleWifiException):
+  """Foyer rate limited the request (HTTP 429). Retry later."""
   pass
 
 class GoogleHomeUpdateFailed(Exception):
